@@ -1,4 +1,3 @@
-# Prueba-de-modelo-de-ByteLatentTransformer
 # BLT (Byte-Level Transformer)
 
 A PyTorch implementation of a Byte-Level Transformer model for efficient text generation and processing at the byte level with adaptive patching mechanisms.
@@ -292,11 +291,27 @@ custom_dataset = ByteDataset(
 
 ## Error Handling and Debugging
 
-### Common Issues
+### Common Issues and Limitations
+
+#### Technical Issues
 - CUDA out of memory
 - Gradient overflow
 - Attention mask compatibility
 - Byte encoding errors
+
+#### Performance Limitations
+- Lack of optimization for vectorized operations
+- Incomplete adaptability in certain scenarios
+- Learning difficulty (requires large amounts of data for text generation)
+- Code modularity challenges
+- Cache implementation problems
+- Low-level CUDA kernel optimization issues
+- Low-level optimization challenges in general performance
+
+#### Resource Requirements
+- High computational requirements for training
+- Significant memory usage for larger models
+- Extended training time for optimal performance
 
 ### Debug Mode
 ```python
@@ -304,6 +319,24 @@ custom_dataset = ByteDataset(
 torch._dynamo.config.suppress_errors = True
 print(f"Flash SDP enabled: {torch.backends.cuda.flash_sdp_enabled()}")
 ```
+
+## Model Capabilities and Future Development
+
+### Demonstrated Capabilities
+- Text Reconstruction: The model has demonstrated strong capability in accurate text reconstruction, being able to regenerate input text with high fidelity
+- Rapid Adaptation: Shows quick adaptation capabilities (implemented through extensive dropout layers)
+- Byte-Level Understanding: Demonstrates deep understanding of byte-level patterns and structures
+
+### Current Development
+- Native Audio Processing: Currently testing capabilities for native audio decoding and generation
+- Multimodal Extensions: Working on expanding the model's capabilities to handle multiple modalities
+- Spanish Documentation: Full documentation available in Spanish
+- Enhanced Features: Planning to release complete codebase with improved multimodal capabilities
+
+## Additional Notes
+- The extensive use of dropout layers is intentional, supporting the model's rapid adaptation capabilities
+- The byte-level approach shows promise for extending beyond text to other modalities
+- Future releases will include extended multimodal capabilities and improvements
 
 ## License
 
