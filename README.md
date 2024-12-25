@@ -378,6 +378,53 @@ Note: These improvements are speculative and would require testing for effective
 - The byte-level approach shows promise for extending beyond text to other modalities
 - Future releases will include extended multimodal capabilities and improvements
 
-## License
+## Model Foundation and References
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This implementation draws inspiration from several groundbreaking papers in the field:
+
+### Primary References
+
+1. **DIFFERENTIAL TRANSFORMER**
+   - Authors: Tianzhu Ye, Li Dong, Yuqing Xia, Yutao Sun, Yi Zhu, Gao Huang, Furu Wei
+   - Institution: Microsoft Research & Tsinghua University
+   - Paper: arXiv:2410.05258v1 [cs.CL] 7 Oct 2024
+   - URL: https://aka.ms/GeneralAI
+
+2. **ByteLatentTransformer: Patches Scale Better Than Tokens**
+   - Authors: Artidoro Pagnoni, Ram Pasunuru, Pedro Rodriguez, John Nguyen, Benjamin Muller, Margaret Li, et al.
+   - Institution: FAIR at Meta, University of Washington, University of Chicago
+   - Notable features adapted:
+     - Patch-based processing
+     - Byte-level representations
+     - Latent space transformations
+
+Note: Additional foundational papers and architectural influences will be documented in future updates.
+
+### Key Architectural Influences
+- Differential computation mechanisms from DIFFERENTIAL TRANSFORMER
+- Patch-based scaling strategies from ByteLatentTransformer
+- Byte-level processing techniques
+- Attention mechanism adaptations
+- Memory-efficient design patterns
+
+## Real-Time Implementation Challenges
+
+The model currently faces several challenges for real-time applications:
+
+### Hardware-Specific Limitations
+- GPU optimization requirements
+- CPU performance bottlenecks
+- Cross-architecture compatibility issues
+- Memory bandwidth constraints
+
+### Computation Optimization Needs
+- Real-time inference latency
+- Cross-platform performance variability
+- Resource utilization efficiency
+- Batch processing overhead
+
+### Future Optimization Goals
+- Hardware-agnostic performance improvements
+- Reduced inference latency
+- Better resource utilization
+- Enhanced cross-platform compatibility
