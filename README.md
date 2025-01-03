@@ -263,172 +263,161 @@ metrics = {
     'confidence_mean': val_results['confidence_mean']
 }
 ```
-### metricas dadas con 40k de ejemplos de longitud de 1532 de openwebtex
-Información General
+## Training and Validation Metrics Log
+
+```plaintext
+### General Information
 ───────────────────────────────
-Tiempo de época               00:32:02
-Tiempo total                  00:32:02
-Learning Rate                 9.62e-05
-Memoria GPU (GB)              6.2
-───────────────────────────────
-
-Métricas de Entrenamiento
-──────────────────────────────
-Pérdida                       4.7813
-Accuracy                      0.1816
-Perplejidad                   119.2563
-Confianza Media               0.08923
-Confianza Mín                 0.0
-Confianza Máx                 1.0
-──────────────────────────────
-
-Métricas de Validación
-──────────────────────────────
-Pérdida                       1.1980
-Accuracy                      0.7068
-Perplejidad                   3.3136
-Confianza Media               0.62284636
-Confianza Mín                 5.966321e-07
-Confianza Máx                 0.99998975
-──────────────────────────────
-
-✓ Guardado nuevo mejor modelo con pérdida de validación: 1.1980
-
-=====================================================================================================================================================================================================================================================================
-                                                                                                                              Época 2/5                                                                                                                              
-=====================================================================================================================================================================================================================================================================
-                                                                      
-Información General
-───────────────────────────────
-Tiempo de época               00:32:42
-Tiempo total                  01:04:56
-Learning Rate                 8.55e-05
-Memoria GPU (GB)              6.2
+Epoch Time                 00:32:02
+Total Time                 00:32:02
+Learning Rate              9.62e-05
+GPU Memory (GB)            6.2
 ───────────────────────────────
 
-Métricas de Entrenamiento
+### Training Metrics
 ──────────────────────────────
-Pérdida                       3.4345
-Accuracy                      0.2839
-Perplejidad                   31.0164
-Confianza Media               0.1409
-Confianza Mín                 4e-07
-Confianza Máx                 1.0
-──────────────────────────────
-
-Métricas de Validación
-──────────────────────────────
-Pérdida                       0.9666
-Accuracy                      0.7577
-Perplejidad                   2.6291
-Confianza Media               0.7401782
-Confianza Mín                 6.7775154e-09
-Confianza Máx                 0.9998758
+Loss                       4.7813
+Accuracy                   0.1816
+Perplexity                 119.2563
+Average Confidence         0.08923
+Min Confidence             0.0
+Max Confidence             1.0
 ──────────────────────────────
 
-✓ Guardado nuevo mejor modelo con pérdida de validación: 0.9666
+### Validation Metrics
+──────────────────────────────
+Loss                       1.1980
+Accuracy                   0.7068
+Perplexity                 3.3136
+Average Confidence         0.62284636
+Min Confidence             5.966321e-07
+Max Confidence             0.99998975
+──────────────────────────────
 
-=====================================================================================================================================================================================================================================================================
-                                                                                                                              Época 3/5                                                                                                                              
-=====================================================================================================================================================================================================================================================================
+✓ Saved new best model with validation loss: 1.1980
+### Epoch 2/5
 
-                                                                                                    
-Información General
+General Information
 ───────────────────────────────
-Tiempo de época               00:32:46
-Tiempo total                  01:38:04
-Learning Rate                 6.94e-05
-Memoria GPU (GB)              6.2
+Epoch Time                 00:32:42
+Total Time                 01:04:56
+Learning Rate              8.55e-05
+GPU Memory (GB)            6.2
 ───────────────────────────────
 
-Métricas de Entrenamiento
+Training Metrics
 ──────────────────────────────
-Pérdida                       2.9561
-Accuracy                      0.4299
-Perplejidad                   19.2237
-Confianza Media               0.2551
-Confianza Mín                 0.0
-Confianza Máx                 1.0
-──────────────────────────────
-
-Métricas de Validación
-──────────────────────────────
-Pérdida                       0.7731
-Accuracy                      0.8087
-Perplejidad                   2.1665
-Confianza Media               0.7955285
-Confianza Mín                 1.1130539e-12
-Confianza Máx                 0.9989254
+Loss                       3.4345
+Accuracy                   0.2839
+Perplexity                 31.0164
+Average Confidence         0.1409
+Min Confidence             4e-07
+Max Confidence             1.0
 ──────────────────────────────
 
-✓ Guardado nuevo mejor modelo con pérdida de validación: 0.7731
+Validation Metrics
+──────────────────────────────
+Loss                       0.9666
+Accuracy                   0.7577
+Perplexity                 2.6291
+Average Confidence         0.7401782
+Min Confidence             6.7775154e-09
+Max Confidence             0.9998758
+──────────────────────────────
 
-=====================================================================================================================================================================================================================================================================
-                                                                                                                              Época 4/5                                                                                                                              
-=====================================================================================================================================================================================================================================================================
+✓ Saved new best model with validation loss: 0.9666
+### Epoch 3/5
 
-                                                                                                    
-Información General
+General Information
 ───────────────────────────────
-Tiempo de época               00:32:46
-Tiempo total                  02:11:12
-Learning Rate                 5.05e-05
-Memoria GPU (GB)              6.2
+Epoch Time                 00:32:46
+Total Time                 01:38:04
+Learning Rate              6.94e-05
+GPU Memory (GB)            6.2
 ───────────────────────────────
 
-Métricas de Entrenamiento
+Training Metrics
 ──────────────────────────────
-Pérdida                       2.6867
-Accuracy                      0.5300
-Perplejidad                   14.6838
-Confianza Media               0.3245
-Confianza Mín                 0.0
-Confianza Máx                 1.0
-──────────────────────────────
-
-Métricas de Validación
-──────────────────────────────
-Pérdida                       0.7060
-Accuracy                      0.8220
-Perplejidad                   2.0259
-Confianza Media               0.79190207
-Confianza Mín                 3.2278507e-15
-Confianza Máx                 0.99852246
+Loss                       2.9561
+Accuracy                   0.4299
+Perplexity                 19.2237
+Average Confidence         0.2551
+Min Confidence             0.0
+Max Confidence             1.0
 ──────────────────────────────
 
-✓ Guardado nuevo mejor modelo con pérdida de validación: 0.7060
+Validation Metrics
+──────────────────────────────
+Loss                       0.7731
+Accuracy                   0.8087
+Perplexity                 2.1665
+Average Confidence         0.7955285
+Min Confidence             1.1130539e-12
+Max Confidence             0.9989254
+──────────────────────────────
 
-=====================================================================================================================================================================================================================================================================
-                                                                                                                              Época 5/5                                                                                                                              
-=====================================================================================================================================================================================================================================================================
+✓ Saved new best model with validation loss: 0.7731
+### Epoch 4/5
 
-                                                                                                    
-Información General
+General Information
 ───────────────────────────────
-Tiempo de época               00:32:44
-Tiempo total                  02:44:18
-Learning Rate                 3.16e-05
-Memoria GPU (GB)              6.2
+Epoch Time                 00:32:46
+Total Time                 02:11:12
+Learning Rate              5.05e-05
+GPU Memory (GB)            6.2
 ───────────────────────────────
 
-Métricas de Entrenamiento
+Training Metrics
 ──────────────────────────────
-Pérdida                       2.5390
-Accuracy                      0.5932
-Perplejidad                   12.6675
-Confianza Media               0.368
-Confianza Mín                 0.0
-Confianza Máx                 0.9995
+Loss                       2.6867
+Accuracy                   0.5300
+Perplexity                 14.6838
+Average Confidence         0.3245
+Min Confidence             0.0
+Max Confidence             1.0
 ──────────────────────────────
 
-Métricas de Validación
+Validation Metrics
 ──────────────────────────────
-Pérdida                       0.6523
-Accuracy                      0.8426
-Perplejidad                   1.9199
-Confianza Media               0.7912491
-Confianza Mín                 1.2109595e-16
-Confianza Máx                 0.99864846
+Loss                       0.7060
+Accuracy                   0.8220
+Perplexity                 2.0259
+Average Confidence         0.79190207
+Min Confidence             3.2278507e-15
+Max Confidence             0.99852246
+──────────────────────────────
+
+✓ Saved new best model with validation loss: 0.7060
+### Epoch 5/5
+
+General Information
+───────────────────────────────
+Epoch Time                 00:32:44
+Total Time                 02:44:18
+Learning Rate              3.16e-05
+GPU Memory (GB)            6.2
+───────────────────────────────
+
+Training Metrics
+──────────────────────────────
+Loss                       2.5390
+Accuracy                   0.5932
+Perplexity                 12.6675
+Average Confidence         0.368
+Min Confidence             0.0
+Max Confidence             0.9995
+──────────────────────────────
+
+Validation Metrics
+──────────────────────────────
+Loss                       0.6523
+Accuracy                   0.8426
+Perplexity                 1.9199
+Average Confidence         0.7912491
+Min Confidence             1.2109595e-16
+Max Confidence             0.99864846
+──────────────────────────────
+
 ### Visualization
 ```python
 from colorama import Fore, Style
