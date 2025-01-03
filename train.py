@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 import logging
 from typing import Dict, Any, Tuple, List
-
+import math
 class ByteDataset(Dataset):
     def __init__(self, 
                  texts: List[str], 
@@ -168,7 +168,28 @@ def format_value(value, format_spec=None):
         return str(value)
     except:
         return str(value)
-
+def limit_logits_confidence(logits, max_conf=0.94):
+    """
+    Limita confianza directamente en logits
+    Método más profundo y efectivo
+    """
+    # Calcular valor máximo de logits correspondiente a max_conf
+    max_log_prob = torch.log(torch.tensor(max_conf))
+    
+    # Normalizar logits
+    log_probs = F.log_softmax(logits, dim=-1)
+    
+    # Limitar logits
+    limited_log_probs = torch.where(
+        log_probs > max_log_prob, 
+        max_log_prob, 
+        log_probs
+    )
+    
+    # Renormalizar para mantener distribución
+    limited_log_probs = limited_log_probs - limited_log_probs.logsumexp(dim=-1, keepdim=True)
+    
+    return limited_log_probs
 def print_metrics_table(metrics, title=None):
     """Imprime una tabla de métricas."""
     if title:
@@ -179,6 +200,7 @@ def print_metrics_table(metrics, title=None):
         value_str = format_value(value, format_spec)
         print(f"{color}{name.ljust(30)}{Style.BRIGHT}{value_str}{Style.RESET_ALL}")
     print(f"{Fore.BLUE}{Style.BRIGHT}{'─'*width}{Style.RESET_ALL}")
+import torch_optimizer as optim  # Importa la librería con AdaBelief
 
 def train_model(model, train_loader, val_loader, config, num_epochs=10):
     start_time = time.time()
@@ -236,6 +258,7 @@ def train_model(model, train_loader, val_loader, config, num_epochs=10):
                             patch_boundaries = None
                         
                         logits = model(input_bytes, patch_boundaries)
+                        
                         loss = F.cross_entropy(logits.reshape(-1, 256), target_bytes.reshape(-1))
                         
                         probabilities = F.softmax(logits, dim=-1)
@@ -290,12 +313,25 @@ def train_model(model, train_loader, val_loader, config, num_epochs=10):
         
         desc = f'{Fore.GREEN}Entrenamiento{Style.RESET_ALL}'
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader),
-                          desc=desc, leave=False, ncols=100)
+                        desc=desc, leave=False, ncols=100)
         
         for step, batch in progress_bar:
+            # Añadir aquí la actualización del progreso
+            current_step = epoch * len(train_loader) + step
+            model.update_training_progress(current_step, num_epochs * len(train_loader))
+            # Calcular el factor de mezcla actual (similar al cálculo en compute_patches)
+            training_progress = current_step / (num_epochs * len(train_loader))
+            if training_progress < 0.2:
+                entropy_factor = 0.0
+            elif training_progress > 0.8:
+                entropy_factor = 1.0
+            else:
+                entropy_factor = (training_progress - 0.2) / 0.6
+                entropy_factor = 1 / (1 + math.exp(-10 * (entropy_factor - 0.5)))
+                        
             if step % 100 == 0:
                 torch.cuda.empty_cache()
-            
+
             try:
                 if batch.size(1) > config.get('max_sequence_length', 1024):
                     batch = batch[:, :config['max_sequence_length']]
@@ -312,7 +348,8 @@ def train_model(model, train_loader, val_loader, config, num_epochs=10):
                             patch_boundaries = torch.where(entropies > patch_config.entropy_threshold)[0]
                     
                     logits = model(input_bytes, patch_boundaries)
-                    loss = criterion(logits.reshape(-1, 256), target_bytes.reshape(-1))
+                    limited_logits = limit_logits_confidence(logits, max_conf=0.9)
+                    loss = criterion(limited_logits.reshape(-1, 256), target_bytes.reshape(-1))
                     loss = loss / gradient_accumulation_steps
                 
                 scaler.scale(loss).backward()
@@ -335,8 +372,7 @@ def train_model(model, train_loader, val_loader, config, num_epochs=10):
                 probabilities = F.softmax(logits, dim=-1)
                 predictions = torch.argmax(probabilities, dim=-1)
                 correct = (predictions == target_bytes).float()
-                confidence = probabilities.gather(-1, target_bytes.unsqueeze(-1)).squeeze(-1)
-                
+                confidence = probabilities.gather(-1, target_bytes.unsqueeze(-1)).squeeze(-1)             
                 train_metrics['correct'] += correct.sum().item()
                 train_metrics['total'] += correct.numel()
                 train_metrics['confidences'].extend(confidence.detach().cpu().numpy())
@@ -346,10 +382,12 @@ def train_model(model, train_loader, val_loader, config, num_epochs=10):
                 current_lr = optimizer.param_groups[0]['lr']
                 current_mem = torch.cuda.memory_allocated()/1024**3
                 
+                # Actualizar la barra de progreso con el factor de entropía
                 progress_bar.set_postfix({
                     'loss': f"{current_loss:.4f}",
                     'lr': f"{current_lr:.2e}",
-                    'mem': f"{current_mem:.1f}GB"
+                    #'mem': f"{current_mem:.1f}GB",
+                    'EntropyLM': f"{entropy_factor*100:.1f}%"  # Nuevo campo
                 })
                 
             except RuntimeError as e:
@@ -545,22 +583,29 @@ def generate_text(model, start_text, max_length=1000, temperature=1.0, patch_con
 
     def nucleus_sampling(logits: torch.Tensor, temperature: float, top_p: float = 0.9) -> int:
         """Realiza nucleus sampling (top-p) con temperatura."""
+        # [DEBUG] Iniciar nucleus_sampling
+        #print("[DEBUG] Iniciando nucleus_sampling.")
         scaled_logits = logits / temperature
         sorted_logits, sorted_indices = torch.sort(scaled_logits, descending=True)
         cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-        
+
         # Crear máscara para top-p
         sorted_indices_to_remove = cumulative_probs > top_p
         sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
         sorted_indices_to_remove[..., 0] = 0
-        
+
         # Aplicar máscara y renormalizar
         sorted_logits[sorted_indices_to_remove] = float('-inf')
         probs = F.softmax(sorted_logits, dim=-1)
-        
-        # Muestrear
+
+        # Muestrear y asegurar que retornamos un int
         item = torch.multinomial(probs, 1)
-        return sorted_indices[item].item()
+        selected_index = sorted_indices[item].item()
+        
+        # [DEBUG] Token seleccionado
+        #print(f"[DEBUG] Token seleccionado: {selected_index}")
+        
+        return int(selected_index)  # Convertir explícitamente a int
 
     def beam_search_step(
         model,
@@ -572,34 +617,57 @@ def generate_text(model, start_text, max_length=1000, temperature=1.0, patch_con
         temperature: float
     ) -> Tuple[torch.Tensor, torch.Tensor, GenerationCache]:
         """Realiza un paso de beam search."""
+        # [DEBUG] Iniciar beam_search_step
+        #print("[DEBUG] Iniciando beam_search_step.")
         logits = model(input_ids, patch_boundaries_arg)
+        #print(f"[DEBUG] Logits shape after model forward: {logits.shape}")
+        
         next_token_logits = logits[:, -1, :] / temperature
+        #print(f"[DEBUG] Next token logits shape: {next_token_logits.shape}")
         
         # Calcular puntuaciones para todos los posibles siguientes tokens
         vocab_size = next_token_logits.size(-1)
         next_scores = F.log_softmax(next_token_logits, dim=-1) + beam_scores.unsqueeze(-1)
         next_scores = next_scores.view(-1)
+        #print(f"[DEBUG] Next scores shape after reshaping: {next_scores.shape}")
+        
+        # Asegurar que beam_width no exceda el tamaño del vocabulario
+        effective_beam_width = min(beam_width, next_scores.size(0))
+        #print(f"[DEBUG] Effective beam width: {effective_beam_width}")
         
         # Seleccionar los mejores beam_width tokens
-        top_scores, top_tokens = torch.topk(next_scores, beam_width)
-        beam_indices = top_tokens // vocab_size
+        top_scores, top_tokens = torch.topk(next_scores, effective_beam_width)
+        #print(f"[DEBUG] Top scores: {top_scores}")
+        #print(f"[DEBUG] Top tokens: {top_tokens}")
+        
+        # Calcular índices evitando la división problemática
+        beam_indices = torch.div(top_tokens, vocab_size, rounding_mode='floor')
         next_tokens = top_tokens % vocab_size
+        #print(f"[DEBUG] Beam indices: {beam_indices}")
+        #print(f"[DEBUG] Next tokens: {next_tokens}")
         
         # Actualizar secuencias
         current_sequences = input_ids[beam_indices]
         next_sequences = torch.cat([current_sequences, next_tokens.unsqueeze(1)], dim=-1)
+        #print(f"[DEBUG] Next sequences shape: {next_sequences.shape}")
         
         return next_sequences, top_scores, cache
 
     # Inicio de la lógica principal de generate_text
     model.eval()
     device = next(model.parameters()).device
-    
+    #print("[DEBUG] Modelo en modo evaluación.")
+    #print(f"[DEBUG] Dispositivo del modelo: {device}")
+
     try:
         # Convertir entrada a bytes y verificar
         input_bytes = start_text.encode('utf-8')
         input_ids = list(input_bytes)
+        #print(f"[DEBUG] Input bytes: {input_bytes}")
+        #print(f"[DEBUG] Input IDs: {input_ids}")
+        
         if not input_ids:
+            #print("[DEBUG] Entrada vacía detectada.")
             return "Error: entrada vacía"
         
         # Configuración de generación
@@ -608,94 +676,143 @@ def generate_text(model, start_text, max_length=1000, temperature=1.0, patch_con
         min_length = 30
         repetition_penalty = 1.2
         cache = GenerationCache()
+        #print("[DEBUG] Configuración de generación inicializada.")
         
         with torch.no_grad():
             # Inicialización para beam search
             input_tensor = torch.tensor([input_ids], dtype=torch.long, device=device)
             beam_scores = torch.zeros(1, device=device)
             sequences = [(input_ids, 0.0)]
+            #print(f"[DEBUG] Inicialización de input_tensor: {input_tensor.shape}")
+            #print(f"[DEBUG] Beam scores iniciales: {beam_scores}")
+            #print(f"[DEBUG] Secuencias iniciales: {sequences}")
             
             while len(sequences[0][0]) < max_length:
+                # [DEBUG] Inicio del ciclo de generación
+                #print(f"[DEBUG] Iteración de generación: {len(sequences[0][0])} < {max_length}")
+                
                 current_sequences = [seq for seq, _ in sequences]
                 current_scores = torch.tensor([score for _, score in sequences], device=device)
+                #print(f"[DEBUG] Current scores shape: {current_scores.shape}")
+                #print(f"[DEBUG] Current scores: {current_scores}")
                 
                 # Preparar entrada para el modelo
                 batch_sequences = torch.tensor(current_sequences, device=device)
+                #print(f"[DEBUG] Batch sequences shape: {batch_sequences.shape}")
                 
                 # Calcular patch boundaries
                 patch_boundaries = []
                 if patch_config is not None and patch_config.scheme == 'entropy':
                     try:
+                        #print("[DEBUG] Calculando entropías para patch boundaries.")
                         entropies = model.entropy_model(batch_sequences)
+                        #print(f"[DEBUG] Entropies shape: {entropies.shape}")
+
                         if patch_config.use_monotonic and entropies.size(1) > 1:
                             entropy_diff = entropies[:, 1:] - entropies[:, :-1]
+                            #print(f"[DEBUG] Entropy differences shape: {entropy_diff.shape}")
                             indices = torch.where(entropy_diff > patch_config.entropy_threshold)[1]
+                            #print(f"[DEBUG] Entropy threshold indices: {indices}")
                             patch_boundaries = indices + 1 if indices.numel() > 0 else []
                         else:
                             indices = torch.where(entropies > patch_config.entropy_threshold)[1]
+                            #print(f"[DEBUG] Entropy threshold indices (no monotonic): {indices}")
                             patch_boundaries = indices if indices.numel() > 0 else []
+
+                        #print(f"[DEBUG] Patch boundaries para este batch: {patch_boundaries}")
                     except Exception as e:
-                        print(f"Advertencia en cálculo de entropía: {e}")
+                        #print(f"[DEBUG] Advertencia en cálculo de entropía: {e}")
                         patch_boundaries = []
-                
-                patch_boundaries_arg = patch_boundaries if patch_boundaries else None
+
+                # Convertir patch_boundaries a argumento manejable
+                if isinstance(patch_boundaries, torch.Tensor):
+                    patch_boundaries_arg = patch_boundaries if patch_boundaries.numel() > 0 else None
+                elif isinstance(patch_boundaries, list):
+                    patch_boundaries_arg = patch_boundaries if len(patch_boundaries) > 0 else None
+                else:
+                    patch_boundaries_arg = None
+
+                #print(f"[DEBUG] Patch boundaries argument: {patch_boundaries_arg}")
                 
                 # Alternar entre beam search y nucleus sampling
                 if len(current_sequences[0]) < min_length:
-                    # Usar beam search para el inicio
+                    # [DEBUG] Usando beam search para el inicio
+                    #print("[DEBUG] Usando beam search para la generación.")
                     next_sequences, next_scores, cache = beam_search_step(
                         model, batch_sequences, current_scores,
                         cache, beam_width, patch_boundaries_arg, temperature
                     )
                     
+                    # Actualizar secuencias
                     sequences = [
                         (seq.tolist(), score.item())
                         for seq, score in zip(next_sequences, next_scores)
                     ]
+                    #print(f"[DEBUG] Nuevas secuencias después de beam search: {sequences}")
                 else:
-                    # Usar nucleus sampling para más variedad
+                    # [DEBUG] Usando nucleus sampling para más variedad
+                    #print("[DEBUG] Usando nucleus sampling para la generación.")
                     logits = model(batch_sequences, patch_boundaries_arg)
+                    #print(f"[DEBUG] Logits shape después del modelo: {logits.shape}")
+                    
                     next_token_logits = logits[0, -1, :]
+                    #print(f"[DEBUG] Next token logits shape: {next_token_logits.shape}")
                     
                     # Aplicar temperatura adaptativa
                     adaptive_temp = compute_adaptive_temperature(next_token_logits)
                     actual_temp = temperature * adaptive_temp
+                    #print(f"[DEBUG] Adaptive temperature: {adaptive_temp}, Actual temperature: {actual_temp}")
                     
                     # Aplicar penalización por repetición
                     for seq in current_sequences:
                         for prev_token in seq[-20:]:  # Últimos 20 tokens
-                            next_token_logits[prev_token] /= repetition_penalty
+                            if prev_token >= 0 and prev_token < next_token_logits.size(-1):
+                                next_token_logits[prev_token] /= repetition_penalty
+                                #print(f"[DEBUG] Aplicando penalización por repetición al token: {prev_token}")
                     
+                    # Muestrear el siguiente token
                     next_token = nucleus_sampling(
                         next_token_logits,
                         temperature=actual_temp,
                         top_p=top_p
                     )
+                    #print(f"[DEBUG] Next token muestreado: {next_token}")
                     
                     # Actualizar secuencias
                     best_sequence = sequences[0][0]
                     best_sequence.append(next_token)
                     sequences = [(best_sequence, 0.0)]
+                    #print(f"[DEBUG] Nueva secuencia después de nucleus sampling: {sequences}")
                 
                 # Verificar condiciones de parada
-                if sequences[0][0][-1] == 0 or len(sequences[0][0]) >= max_length:
+                if sequences[0][0][-1] == 0:
+                    #print("[DEBUG] Token de parada (0) encontrado. Finalizando generación.")
+                    break
+                if len(sequences[0][0]) >= max_length:
+                    #print("[DEBUG] Longitud máxima alcanzada. Finalizando generación.")
                     break
             
             # Seleccionar la mejor secuencia
             best_sequence = sequences[0][0]
+            #print(f"[DEBUG] Secuencia final generada: {best_sequence}")
             
             # Post-procesamiento y control de calidad
             generated_bytes = bytes([b for b in best_sequence if b != 0])
             generated_text = generated_bytes.decode('utf-8', errors='replace').strip()
+            #print(f"[DEBUG] Texto generado después de decodificación: {generated_text}")
             
             # Verificar calidad mínima
             if len(generated_text) < 10 or generated_text.isspace():
+                #print("[DEBUG] Texto generado de baja calidad detectado.")
                 return "Error: generación de texto de baja calidad"
             
+            print("[DEBUG] Generación completada exitosamente.")
             return generated_text
-            
+                
     except Exception as e:
+        print(f"[DEBUG] Error en generación: {str(e)}")
         return f"Error en generación: {str(e)}"
+
 def main():
     # Configurar precisión para mejor rendimiento
     torch.set_float32_matmul_precision('high')
@@ -726,7 +843,7 @@ def main():
     try:
         # Dataset de entrenamiento: OpenWebText
         train_dataset_stream = load_dataset("Skylion007/openwebtext", split="train", streaming=True)
-        train_size = 110000
+        train_size = 40000
         train_texts = []
         print("Cargando dataset de entrenamiento (OpenWebText)...")
         for i, example in enumerate(train_dataset_stream):
@@ -736,7 +853,7 @@ def main():
         print(f"Tamaño de entrenamiento (OpenWebText): {len(train_texts)}")
         
         # Dataset de validación: Wikitext-103
-        val_size = 100000
+        val_size = 60000
     
         val_dataset_stream = load_dataset("wikitext", "wikitext-103-v1", split="train", streaming=True)
         val_texts = []
@@ -759,7 +876,7 @@ def main():
         encoder_layers=2,
         global_layers=8,
         decoder_layers=6,
-        attention_dropout=0.12,
+        attention_dropout=0.13,
         resid_dropout=0.12,
         ngram_vocab_size=150000,
         window_size=512,
@@ -772,15 +889,15 @@ def main():
     # Configuración del entrenamiento
     training_config = {
         'learning_rate': 1e-4,
-        'weight_decay': 0.01,
+        'weight_decay': 0.015,
         'warmup_steps': 500,
-        'max_grad_norm': 2.0,
+        'max_grad_norm': 2,
         'gradient_accumulation_steps': 4,
-        'max_sequence_length': 3072,
-        'batch_size': 32,
-        'eval_batch_size': 32,
-        'patience': 3,
-        'num_epochs': 3,
+        'max_sequence_length': 1532,
+        'batch_size': 8,
+        'eval_batch_size': 8,
+        'patience': 5,
+        'num_epochs': 5,
         'min_text_length': 30
     } 
 
