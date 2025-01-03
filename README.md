@@ -272,7 +272,7 @@ Epoch Time                 00:32:02
 Total Time                 00:32:02
 Learning Rate              9.62e-05
 GPU Memory (GB)            6.2
-Hardware                   NVIDIA L40
+Hardware                   NVIDIA L4
 Batch Size                 8 (Training and Validation)
 ───────────────────────────────
 
