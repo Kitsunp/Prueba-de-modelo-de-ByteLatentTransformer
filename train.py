@@ -843,7 +843,7 @@ def main():
     try:
         # Dataset de entrenamiento: OpenWebText
         train_dataset_stream = load_dataset("Skylion007/openwebtext", split="train", streaming=True)
-        train_size = 40000
+        train_size = 150000
         train_texts = []
         print("Cargando dataset de entrenamiento (OpenWebText)...")
         for i, example in enumerate(train_dataset_stream):
@@ -853,16 +853,16 @@ def main():
         print(f"Tamaño de entrenamiento (OpenWebText): {len(train_texts)}")
         
         # Dataset de validación: Wikitext-103
-        val_size = 60000
+        val_size = 80000
     
-        val_dataset_stream = load_dataset("wikitext", "wikitext-103-v1", split="train", streaming=True)
+        val_dataset_stream = load_dataset("Skylion007/openwebtext", split="train", streaming=True)
         val_texts = []
-        print("Cargando dataset de validación (Wikitext-103)...")
+        print("Cargando dataset de validación (openwebtext)...")
         for i, example in enumerate(val_dataset_stream):
             if i >= val_size:
                 break
             val_texts.append(example["text"])
-        print(f"Tamaño de validación (Wikitext-103): {len(val_texts)}")
+        print(f"Tamaño de validación (openwebtext): {len(val_texts)}")
     
     except Exception as e:
         print(f"Error al cargar los datasets: {str(e)}")
@@ -878,7 +878,7 @@ def main():
         decoder_layers=6,
         attention_dropout=0.13,
         resid_dropout=0.12,
-        ngram_vocab_size=150000,
+        ngram_vocab_size=400000,
         window_size=512,
         max_position_embeddings=4096,
         entropy_model_layers=2,
@@ -890,12 +890,12 @@ def main():
     training_config = {
         'learning_rate': 1e-4,
         'weight_decay': 0.015,
-        'warmup_steps': 500,
+        'warmup_steps': 502,
         'max_grad_norm': 2,
         'gradient_accumulation_steps': 4,
-        'max_sequence_length': 1532,
-        'batch_size': 8,
-        'eval_batch_size': 8,
+        'max_sequence_length': 1536,
+        'batch_size': 32,
+        'eval_batch_size': 32,
         'patience': 5,
         'num_epochs': 5,
         'min_text_length': 30
