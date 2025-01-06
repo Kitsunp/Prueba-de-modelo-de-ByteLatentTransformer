@@ -265,6 +265,7 @@ metrics = {
 ```
 ## Training and Validation Metrics Log
 ### Información General
+```plaintext
 ───────────────────────────────
 Tiempo de época               00:24:06
 Tiempo total                  00:24:06
