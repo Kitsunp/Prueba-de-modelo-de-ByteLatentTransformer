@@ -416,98 +416,190 @@ class DecoderLayer(nn.Module):
 # =============================================================================
 #                          EMBEDDINGS A NIVEL DE BYTE
 # =============================================================================
+import torch
+import torch.nn as nn
+
 class ByteEmbedding(nn.Module):
     """
-    Genera embeddings a nivel de byte e incluye n-gram embeddings.
-    """ 
+    Genera embeddings a nivel de byte combinando embeddings individuales con n-gram embeddings 
+    mediante concatenación y proyección lineal.
+
+    Esta clase implementa un sistema avanzado de embeddings que:
+    1. Procesa bytes individuales y n-gramas (3 a 8 bytes)
+    2. Utiliza gating estocástico con ruido Gaussiano para mejorar la robustez
+    3. Implementa gates residuales aprendibles
+    4. Concatena y proyecta embeddings en lugar de sumarlos
+    5. Aplica múltiples capas de dropout para regularización
+
+    La arquitectura está diseñada para maximizar la capacidad expresiva mientras 
+    mantiene la robustez y la capacidad de generalización.
+    """
+
     def __init__(self, config):
+        """
+        Inicializa la capa ByteEmbedding.
+
+        Args:
+            config (Namespace): Objeto de configuración que debe contener:
+                - hidden_size (int): Dimensión de los embeddings
+                - ngram_vocab_size (int): Tamaño del vocabulario para cada n-grama
+                - resid_dropout (float): Tasa de dropout para embeddings y gating
+                - noise_std (float): Desviación estándar del ruido Gaussiano
+        """
         super().__init__()
+
+        # Embedding para bytes individuales (256 posibles valores)
         self.byte_embeddings = nn.Embedding(256, config.hidden_size)
+
+        # Lista de embeddings para n-gramas de tamaño 3 a 8
         self.ngram_hash_embeddings = nn.ModuleList([
             nn.Embedding(config.ngram_vocab_size, config.hidden_size)
-            for _ in range(6)  # Para n-gramas de tamaño 3 a 8
+            for _ in range(6)  # n-gramas de tamaño 3 a 8
         ])
-        
-        self.dropout = nn.Dropout(config.resid_dropout)
+
+        # Proyecciones lineales para después de la concatenación
+        self.projections = nn.ModuleList([
+            nn.Linear(config.hidden_size * 2, config.hidden_size)
+            for _ in range(6)
+        ])
+
+        # Normalización por capa aplicada al final
+        self.layer_norm = nn.LayerNorm(config.hidden_size)
+
+        # Escala adaptativa de ruido
+        self.noise_scale = nn.Parameter(torch.tensor(0.09))
+
+        # Parámetros aprendibles de gating para cada tamaño de n-grama (3 a 8)
+        self.ngram_gates = nn.Parameter(torch.ones(6))
+
+        # Gates residuales aprendibles
+        self.residual_gates = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(config.hidden_size * 2, config.hidden_size),
+                nn.LayerNorm(config.hidden_size),
+                nn.GELU(),
+                nn.Linear(config.hidden_size, 1),
+                nn.Sigmoid()
+            ) for _ in range(6)
+        ])
+
+        # Dropouts
+        self.dropout = nn.Dropout(config.resid_dropout)  # Dropout en embeddings base
+        self.gate_dropout = nn.Dropout(config.resid_dropout)  # Dropout en gates estocásticos
+        self.residual_dropout = nn.Dropout(config.resid_dropout)  # Dropout en embeddings expandidos
+        self.residual_gate_dropout = nn.Dropout(config.resid_dropout)  # Dropout en gates residuales
+        self.projection_dropout = nn.Dropout(config.resid_dropout)  # Dropout post-proyección
 
     def compute_ngram_hash(self, bytes_sequence, n):
         """
-        Calcula un índice de hash para cada n-grama y lo retorna como LongTensor,
-        garantizando que se puede usar en nn.Embedding sin errores de dtype.
-        
-        El propósito es:
-        - Extraer n-gramas de la secuencia de bytes.
-        - Calcular un hash base combinando los bytes y pesos exponenciales (256**pos).
-        - Ajustar el hash con un factor de escala y offset para mejorar la dispersión.
-        - Devolver índices enteros en el rango [0, vocab_size).
+        Calcula índices de hash para cada n-grama en la secuencia.
+
+        Implementa un esquema de hashing que:
+        1. Extrae n-gramas consecutivos
+        2. Calcula hashes usando pesos exponenciales
+        3. Aplica factores de escala adaptativos
+        4. Utiliza offsets primos para mejor distribución
+
+        Args:
+            bytes_sequence (torch.Tensor): Tensor de bytes [batch_size, seq_length]
+            n (int): Tamaño del n-grama (3-8)
+
+        Returns:
+            torch.Tensor: Índices de hash [batch_size, seq_length - n + 1]
         """
         device = bytes_sequence.device
         batch_size, seq_length = bytes_sequence.shape
 
-        # Si la secuencia es más corta que n, se retorna un tensor vacío
         if seq_length < n:
             return torch.empty((batch_size, 0), dtype=torch.long, device=device)
 
-        # Extraer todos los n-gramas: [B, (seq_length - n + 1), n]
+        # Extraer n-gramas: [B, (seq_length - n + 1), n]
         ngrams = bytes_sequence.unfold(dimension=1, size=n, step=1)
 
-        # Factor de escala adaptativo basado en n
+        # Factores adaptativos basados en n
         scale_factor = 1.0 - (n - 3) * 0.1  # Decrece con n
-        # Offset dinámico para mejor dispersión
-        offset = ((n - 3) * 37) % 256      # Primo para mejorar la distribución
+        offset = ((n - 3) * 37) % 256  # Offset primo
 
-        # Cálculo de los pesos exponenciales
+        # Pesos exponenciales para el hash
         exponents = torch.arange(n, device=device).float()
         weights = (256 ** exponents).unsqueeze(0).unsqueeze(0)  # [1,1,n]
 
-        # Cálculo del hash base
-        # - Se hace en float para permitir multiplicaciones con scale_factor
+        # Cálculo del hash
         hash_values = (ngrams.float() * weights).sum(dim=-1)  # [B, seq_length-n+1]
-        
-        # Convertir a float y aplicar factor de escala y offset
-        # (sum ya nos da float, pero aseguramos que sea explícito)
         hash_values = hash_values * scale_factor + offset
-
-        # En este punto hash_values es float. Para usarlo como índice, necesitamos long.
-        # "Cómo" convertimos a long depende de si queremos:
-        # - Truncar (hash_values.long())
-        # - Redondear (hash_values.round().long()) 
-        # - O usar algún otro método
-        #
-        # Generalmente se usa truncar, para que el % vocab_size sea coherente.
-        # De lo contrario, puede que redondeemos y terminemos con un índice mayor
-        # al que esperábamos. Aquí elegimos truncar:
-
         hash_values = hash_values.long()
 
+        # Ajustar al tamaño del vocabulario
         vocab_size = self.ngram_hash_embeddings[n-3].num_embeddings
-        # Operación modular para garantizar [0, vocab_size)
-        hash_tensor = hash_values % vocab_size
-
-        # Aseguramos que sea long (por si % produce int32 en alguna plataforma)
-        hash_tensor = hash_tensor.long()
-
-        return hash_tensor
+        return hash_values % vocab_size
 
     def forward(self, bytes_input):
-        # print("\n[ByteEmbedding] - Input shape:", bytes_input.shape)
+        """
+        Procesa la secuencia de bytes para generar embeddings enriquecidos.
+
+        El proceso incluye:
+        1. Generación de embeddings base
+        2. Procesamiento de n-gramas
+        3. Aplicación de gates estocásticos y residuales
+        4. Concatenación y proyección de embeddings
+        5. Normalización final
+
+        Args:
+            bytes_input (torch.Tensor): Tensor de bytes [batch_size, seq_length]
+
+        Returns:
+            torch.Tensor: Embeddings procesados [batch_size, seq_length, hidden_size]
+        """
         device = bytes_input.device
         batch_size, seq_length = bytes_input.shape
 
+        # Embeddings base
         embeds = self.byte_embeddings(bytes_input).float()
         embeds = self.dropout(embeds)
-        # print("[ByteEmbedding] - After byte embedding shape:", embeds.shape)
-        
-        for n in range(3, 9):
-            if seq_length >= n:
-                ngram_hashes = self.compute_ngram_hash(bytes_input, n)
-                ngram_embeds = self.ngram_hash_embeddings[n-3](ngram_hashes)
-                
-                expanded_embeds = torch.zeros_like(embeds)
-                expanded_embeds[:, :seq_length - n + 1, :] += ngram_embeds / n
-                embeds = embeds + expanded_embeds
-        # print("[ByteEmbedding] - Output shape:", embeds.shape)
+
+        # Escala de ruido adaptativa
+        current_noise_scale = torch.sigmoid(self.noise_scale)
+
+        # Procesamiento de n-gramas
+        for i, n in enumerate(range(3, 9)):
+            if seq_length < n:
+                continue
+
+            # Generar embeddings de n-gramas
+            ngram_hashes = self.compute_ngram_hash(bytes_input, n)
+            ngram_embeds = self.ngram_hash_embeddings[i](ngram_hashes)
+
+            # Gate estocástico con ruido
+            noise = torch.randn_like(self.ngram_gates[i]) * current_noise_scale
+            alpha_n = self.ngram_gates[i] + noise
+            alpha_n = self.gate_dropout(alpha_n)
+            alpha_n = torch.relu(alpha_n)
+
+            # Aplicar gate y normalización
+            gated_embeds = (ngram_embeds / n) * alpha_n
+
+            # Gate residual
+            gate_input = torch.cat([
+                embeds[:, :seq_length - n + 1],
+                gated_embeds
+            ], dim=-1)
+            gate_input = self.residual_gate_dropout(gate_input)
+            residual_gate = self.residual_gates[i](gate_input)
+            residual_gate = self.residual_gate_dropout(residual_gate)
+
+            # Concatenar y proyectar
+            concatenated = torch.cat([
+                embeds[:, :seq_length - n + 1],
+                gated_embeds * residual_gate
+            ], dim=-1)
+            
+            projected = self.projections[i](concatenated)
+            embeds[:, :seq_length - n + 1, :] = projected
+        # Normalización final
+        embeds = self.layer_norm(embeds)
+
         return embeds
+
 # =============================================================================
 #                        MODELOS DE ENCODER Y DECODER
 # =============================================================================
@@ -1149,7 +1241,7 @@ class EntropyLM(nn.Module):
         context_size: int = 512,
         dropout: float = 0.1,
         learnable_dropout: float = 0.12,
-        max_seq_length: int = 4096,
+        max_seq_length: int = 2048,
         window_size: int = 128,
         vocab_size: int = 256  # Añadido para mayor generalidad
     ):
